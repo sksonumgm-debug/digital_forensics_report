@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827"><meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Audit integrity | AI-DFIR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+  <div class="topbar-right"><a class="user-profile-link" href="{{ url_for('profile') }}" aria-label="View or edit profile for {{ current_user.username }}"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</span><span class="user-profile-name">{{ current_user.username }}</span><span class="profile-link-hint">Profile</span></a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Light mode</span></button><a class="back-link" href="{{ url_for('index') }}">Workspace</a></div>
+</header>
+<main class="container">
+  <section class="hero"><div><p class="eyebrow">ADMINISTRATOR / TAMPER-EVIDENCE CHECK</p><h1>Audit log integrity.</h1><p class="muted">Each new audit record is SHA-256 linked to the previous record for its case.</p></div><a class="button secondary" href="{{ url_for('admin_accounts') }}">Manage accounts</a></section>
+  <section class="panel"><h2 class="audit-integrity-status {{ 'integrity-good' if integrity.valid else 'integrity-bad' }}">{{ "Hash chain verified" if integrity.valid else "Hash chain mismatch detected" }}</h2><p>{{ integrity.entries }} audit entries checked.</p><p class="auth-provision-note">This hash chain can flag accidental changes, but does not prevent a database administrator from rewriting history. Preserve signed backups separately for stronger audit protection.</p></section>
+  <section class="panel"><div class="section-head audit-search-head"><div><p class="eyebrow">LATEST ACTIVITY</p><h2>Audit records</h2></div><label class="audit-search-label">Search activity<input type="search" placeholder="Actor, case, or action…" data-table-search="#audit-table tbody [data-search-row]" data-empty-row="#audit-table .search-empty-row" aria-describedby="audit-search-status"></label></div><p class="filter-count" id="audit-search-status" aria-live="polite"></p><div class="table-wrap"><table id="audit-table"><thead><tr><th>Time (UTC)</th><th>Case</th><th>Actor</th><th>Action</th><th>Details</th><th>Entry hash</th></tr></thead><tbody>
+  {% for entry in entries %}<tr data-search-row><td><time datetime="{{ entry.timestamp }}">{{ entry.timestamp[:19].replace("T", " ") }}</time></td><td>{{ entry.case_title }} · {{ entry.case_id }}</td><td>{{ entry.actor }}</td><td>{{ entry.action }}</td><td>{{ entry.details }}</td><td><code>{{ entry.entry_hash }}</code></td></tr>{% else %}<tr><td colspan="6">No audit entries yet.</td></tr>{% endfor %}
+  <tr class="search-empty-row" hidden><td colspan="6">No audit activity matches this search.</td></tr>
+  </tbody></table></div></section>
+</main>
+</body>
+</html>

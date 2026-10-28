@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if image_processing %}<meta http-equiv="refresh" content="5">{% endif %}
+  <meta name="theme-color" content="#111827">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Case #{{ case.id }} | AI-DFIR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+  <div class="topbar-right"><a class="case-context" href="{{ url_for('case_detail', case_id=case.id) }}">CASE-{{ "%04d"|format(case.id) }} <span>{{ case.title }}</span></a><label class="top-search-wrap"><span class="sr-only">Search case findings</span><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4 4"/></svg><input class="top-search" type="search" placeholder="Search findings…" autocomplete="off" data-table-search=".timeline-row" aria-describedby="case-search-status"></label><a class="user-profile-link" href="{{ url_for('profile') }}" aria-label="View or edit profile for {{ current_user.username }}"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</span><span class="user-profile-name">{{ current_user.username }}</span></a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Theme</span></button><a class="back-link" href="{{ url_for('index') }}">Cases</a><form action="{{ url_for('logout') }}" method="post">{{ csrf_field() }}<button class="button secondary logout-button" type="submit">Sign out</button></form></div>
+</header>
+<div class="app-layout">
+{% set workspace_case_id = case.id %}{% set workspace_section = "overview" %}{% include "_workspace_sidebar.html" %}
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+  {% endwith %}
+  <section class="hero case-hero" id="overview">
+    <div><p class="eyebrow">CASE FILE <span class="eyebrow-rule"></span> OPENED {{ case.created_at[:10] }}</p><h1>{{ case.title }}</h1><p class="muted">{{ case.description or 'No case description provided.' }}</p><div class="case-badges"><span class="case-status">{{ case.status }}</span><span class="case-priority priority-{{ case.priority|lower }}">{{ case.priority }} priority</span>{% for tag in case.tags.split(',') if tag.strip() %}<span class="case-tag">{{ tag.strip() }}</span>{% endfor %}</div></div>
+    <a class="button" href="{{ url_for('report', case_id=case.id) }}">Export case report <span aria-hidden="true">↓</span></a>
+  </section>
+  <section class="stats">
+    <div class="stat-card"><span>Evidence files</span><strong>{{ summary.evidence_count }}</strong><small>Uploaded and hashed</small></div>
+    <div class="stat-card"><span>Analyzed events</span><strong>{{ summary.event_count }}</strong><small>Current analysis</small></div>
+    <div class="stat-card"><span>Review findings</span><strong>{{ summary.finding_count }}</strong><small>Medium or high severity</small></div>
+    <div class="stat-card"><span>High severity</span><strong>{{ summary.high_count }}</strong><small>Requires human review</small></div>
+  </section>
+
+  <section class="panel case-controls">
+    <div class="section-head"><div><p class="eyebrow">CASE MANAGEMENT</p><h2>Working details</h2><p class="panel-intro">Status, priority, assignment, and tags are saved on the case record.</p></div></div>
+    <div class="case-meta-grid">
+      <label>Case status<select data-case-field="status"><option value="Open" {% if case.status == 'Open' %}selected{% endif %}>Open</option><option value="In review" {% if case.status == 'In review' %}selected{% endif %}>In review</option><option value="On hold" {% if case.status == 'On hold' %}selected{% endif %}>On hold</option><option value="Closed" {% if case.status == 'Closed' %}selected{% endif %}>Closed</option></select></label>
+      <label>Priority<select data-case-field="priority"><option value="Routine" {% if case.priority == 'Routine' %}selected{% endif %}>Routine</option><option value="Elevated" {% if case.priority == 'Elevated' %}selected{% endif %}>Elevated</option><option value="Urgent" {% if case.priority == 'Urgent' %}selected{% endif %}>Urgent</option></select></label>
+      <label>Assigned investigator<input data-case-field="assignee" maxlength="120" value="{{ case.assignee }}" placeholder="Assign to a teammate"></label>
+      <label>Tags<input data-case-field="tags" maxlength="500" value="{{ case.tags }}" placeholder="e.g. phishing, endpoint"></label>
+    </div>
+    <div class="actor-inline"><span>Authenticated investigator: <b>{{ current_user.username }}</b> · {{ current_user.role }}</span></div>
+    <p class="local-save-status" id="case-save-status" aria-live="polite">Case details are saved to the investigation record.</p>
+    <div class="case-notes-block" id="case-notes"><div><b>Analyst notes</b><span>Notes are retained in the case activity.</span></div>
+      <form id="case-note-form"><label class="sr-only" for="case-note">Add an analyst note</label><textarea id="case-note" maxlength="1200" rows="2" placeholder="Record a finding, decision, or next step…"></textarea><button class="button secondary" type="submit">Add note</button></form>
+      <div id="case-notes-list" class="case-notes-list">{% for note in notes %}<article><p>{{ note.note }}</p><small>{{ note.created_at }} · {{ note.actor }}</small></article>{% else %}<p class="empty-inline">No analyst notes have been added.</p>{% endfor %}</div>
+    </div>
+  </section>
+
+  <section class="panel" id="processing-jobs">
+    <div class="section-head"><div><p class="eyebrow">BACKGROUND PROCESSING</p><h2>Image job queue</h2><p class="panel-intro">Queued work survives app restarts; active work resumes after restart. Failed jobs can be retried up to three times.</p></div></div>
+    {% if jobs %}<div class="table-wrap"><table><thead><tr><th>Job</th><th>Image</th><th>Status</th><th>Started / completed</th><th>Details</th><th>Actions</th></tr></thead><tbody>
+    {% for job in jobs %}{% set image = disk_images|selectattr('id', 'equalto', job.image_id)|first %}
+    <tr><td>#{{ job.id }} · {{ job.job_type|replace('_',' ')|title }}{% if job.retry_count %}<small class="cell-sub">{{ job.retry_count }} retry attempt(s)</small>{% endif %}</td><td>{{ image.original_name if image else job.image_id }}</td><td>{{ job.status|title }}</td><td>{{ job.started_at or job.created_at }}{% if job.completed_at %}<small class="cell-sub">{{ job.completed_at }}</small>{% endif %}</td><td>{{ job.error or '—' }}</td><td><div class="admin-actions">
+      {% if job.status == 'queued' %}<form method="post" action="{{ url_for('manage_image_job', case_id=case.id, job_id=job.id, action='cancel') }}">{{ csrf_field() }}<button class="button secondary" type="submit">Cancel</button></form>{% endif %}
+      {% if job.status == 'failed' and job.retry_count < 3 %}<form method="post" action="{{ url_for('manage_image_job', case_id=case.id, job_id=job.id, action='retry') }}">{{ csrf_field() }}<button class="button secondary" type="submit">Retry</button></form>{% endif %}
+    </div></td></tr>
+    {% endfor %}</tbody></table></div>{% else %}<p class="empty-inline">No background image jobs for this investigation.</p>{% endif %}
+  </section>
+
+  <section class="panel" id="evidence">
+    <div class="section-head evidence-head"><div><p class="eyebrow">01 / ACQUIRE & VERIFY</p><h2>Evidence register</h2><p class="panel-intro">Files are hashed at intake; verify integrity before relying on analysis.</p></div>
+      <div class="evidence-actions"><label class="evidence-search-label">Search evidence<input type="search" placeholder="Filename or hash…" data-table-search=".evidence-search-row" aria-describedby="evidence-search-status"></label><form action="{{ url_for('verify', case_id=case.id) }}" method="post">{{ csrf_field() }}<button class="button secondary" type="submit">Verify integrity</button></form></div>
+    </div>
+    <p class="filter-count" id="evidence-search-status" aria-live="polite"></p>
+    <div class="upload-block">
+    <div class="upload-heading"><span class="step-number">A</span><div><b>Log and tabular evidence</b><small>CSV, TXT, LOG · Maximum 10 MB</small></div></div>
+    <form action="{{ url_for('upload', case_id=case.id) }}" method="post" enctype="multipart/form-data" class="upload-form">
+      {{ csrf_field() }}
+      <label class="file-picker"> <span class="upload-symbol">↑</span><span><b>Choose evidence file</b><small>CSV, TXT, LOG • Maximum 10 MB</small></span><input type="file" name="evidence" accept=".csv,.txt,.log" required></label>
+      <button class="button" type="submit">Upload & hash</button>
+    </form>
+    <p class="hint">CSV works best with columns such as timestamp, source_ip, event_type, username, status, bytes, port, and message.</p>
+    </div>
+    <div class="upload-block disk-upload">
+      <div class="upload-heading"><span class="step-number">B</span><div><b>Disk image evidence</b><small>E01 segments, AFF, DD, RAW, IMG · Up to 64 GiB per image set</small></div></div>
+      <form action="{{ url_for('upload_disk_image', case_id=case.id) }}" method="post" enctype="multipart/form-data" class="upload-form">
+        {{ csrf_field() }}
+        <label class="file-picker"><span class="upload-symbol">↑</span><span><b>Choose a disk image</b><small>Images are examined read-only</small></span><input type="file" name="images" multiple required></label>
+        <button class="button secondary" type="submit">Upload disk image</button>
+      </form>
+      <p class="hint">Select one complete split-E01 set at a time. Install The Sleuth Kit and add its tools to PATH to enable partition and file-system inspection. Allow sufficient disk space for uploads and recovered files.</p>
+    </div>
+    {% if evidence %}
+    <div class="table-wrap evidence-table"><table><thead><tr><th>Evidence ID</th><th>Filename</th><th>SHA-256</th><th>Size</th><th>Uploaded (UTC)</th><th>Integrity</th><th>Analysis</th></tr></thead><tbody>
+    {% for item in evidence %}{% set analyzed_records = events|selectattr('evidence_name', 'equalto', item.original_name)|list %}{% set integrity = integrity_status.get('file:' ~ (item.id|string), 'Hash recorded') %}<tr class="evidence-search-row" id="evidence-EV-{{ item.id }}"><td><span class="record-id">EV-{{ item.id }}</span></td><td>{{ item.original_name }}<small class="cell-sub"><a href="{{ url_for('download_evidence', case_id=case.id, evidence_id=item.id) }}">Download original</a></small><details class="transfer-details"><summary>Record transfer</summary><form class="transfer-form" data-evidence-type="file" data-evidence-id="{{ item.id }}"><label>Recipient<input name="to_actor" maxlength="120" required placeholder="Investigator name"></label><label>Transfer note<input name="details" maxlength="500" placeholder="Optional reason or method"></label><button class="button secondary" type="submit">Record transfer</button></form></details></td><td><code title="{{ item.sha256 }}">{{ item.sha256 }}</code></td><td>{{ item.size_bytes|filesizeformat }}</td><td><time datetime="{{ item.uploaded_at }}">{{ item.uploaded_at[:19].replace("T", " ") }}</time></td><td><span class="integrity-state {{ 'failed' if integrity == 'Failed' else 'verified' if integrity == 'Verified' else 'recorded' }}">{{ integrity }}</span></td><td>{{ "Analyzed" if analyzed_records else "Not analyzed" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty-inline">No evidence uploaded yet.</p>{% endif %}
+  </section>
+
+  <section class="panel disk-panel" id="disk-analysis">
+    <div class="section-head"><div><p class="eyebrow">READ-ONLY EXAMINATION</p><h2>Disk image analysis</h2><p class="panel-intro">Container hashes and segment details are retained with the case activity.</p></div></div>
+    {% if disk_images %}
+    <div class="table-wrap"><table><thead><tr><th>Image</th><th>Format</th><th>Size</th><th>Uploaded (UTC)</th><th>Container SHA-256</th><th>Integrity</th><th>Analysis</th><th>Actions</th></tr></thead><tbody>
+    {% for image in disk_images %}{% set integrity = integrity_status.get('image:' ~ image.id, 'Hash recorded') %}
+    <tr class="evidence-search-row" id="image-{{ image.id }}">
+      <td>{{ image.original_name }}{% if image.segments|length > 1 %}<small class="cell-sub">{{ image.segments|length }} EWF segments</small>{% endif %}<small class="cell-sub"><a href="{{ url_for('download_image_segment', case_id=case.id, image_id=image.id, segment_name=image.root_name) }}">Download original segment</a></small><details class="transfer-details"><summary>Record transfer</summary><form class="transfer-form" data-evidence-type="image" data-evidence-id="{{ image.id }}"><label>Recipient<input name="to_actor" maxlength="120" required placeholder="Investigator name"></label><label>Transfer note<input name="details" maxlength="500" placeholder="Optional reason or method"></label><button class="button secondary" type="submit">Record transfer</button></form></details></td>
+      <td>{{ image.image_type|upper }}</td>
+      <td>{{ image.size_bytes|filesizeformat }}</td>
+      <td><time datetime="{{ image.created_at }}">{{ image.created_at[:19].replace("T", " ") }}</time></td>
+      <td><code title="{{ image.container_sha256 }}">{{ image.container_sha256[:18] }}…</code>{% if image.segments|length > 1 %}<details><summary>Segments</summary>{% for segment in image.segments %}<small class="cell-sub"><a href="{{ url_for('download_image_segment', case_id=case.id, image_id=image.id, segment_name=segment.name) }}">{{ segment.name }}</a> · {{ segment.sha256[:12] }}…</small>{% endfor %}</details>{% endif %}</td>
+      <td><span class="integrity-state {{ 'failed' if integrity == 'Failed' else 'verified' if integrity == 'Verified' else 'recorded' }}">{{ integrity }}</span></td>
+      <td>{{ image.analysis_status }}{% if image.recovery_status not in ('pending', 'failed') %}<small class="cell-sub">Recovery: {{ image.recovery_status }}</small>{% endif %}</td>
+      <td>
+        <form action="{{ url_for('analyze_disk_image', case_id=case.id, image_id=image.id) }}" method="post">{{ csrf_field() }}<button class="button secondary" type="submit" {% if image.analysis_status in ('queued', 'analyzing') %}disabled{% endif %}>Analyze image</button></form>
+        {% if image.analysis_status == 'complete' %}
+        <form action="{{ url_for('recover_disk_image', case_id=case.id, image_id=image.id) }}" method="post" data-confirm="Extract all recoverable files from this image? This can use substantial disk space.">{{ csrf_field() }}<button class="button secondary" type="submit" {% if image.recovery_status in ('queued', 'recovering', 'complete') %}disabled{% endif %}>Extract & recover files</button></form>
+        {% endif %}
+      </td>
+    </tr>
+    {% if image.segments %}
+    <tr><td colspan="8"><details><summary>Per-segment container SHA-256 values</summary><table><thead><tr><th>Segment</th><th>Size</th><th>SHA-256</th></tr></thead><tbody>
+    {% for segment in image.segments %}<tr><td>{{ segment.name }}</td><td>{{ segment.size_bytes|filesizeformat }}</td><td><code>{{ segment.sha256 }}</code></td></tr>{% endfor %}
+    </tbody></table></details></td></tr>
+    {% endif %}
+    {% if image.last_error %}<tr><td colspan="8"><b>Image-processing error:</b> {{ image.last_error }}</td></tr>{% endif %}
+    {% if image.analysis %}
+    <tr><td colspan="8">
+      <details>
+        <summary>Analysis results — logical image SHA-256: <code>{{ image.analysis.logical_sha256 }}</code></summary>
+        <p>Logical image size: {{ image.analysis.logical_size_bytes|filesizeformat }}. Container/segment hashes are preserved separately above and in the audit trail.</p>
+        {% if image.analysis.partition_table_error %}<p>Partition-table check: {{ image.analysis.partition_table_error }} The whole image was also checked as a filesystem.</p>{% endif %}
+        <details><summary>Image metadata and partition table</summary><pre>{{ image.analysis.image_info }}
+{{ image.analysis.partition_table }}</pre></details>
+        {% for partition in image.analysis.partitions %}
+        <details>
+          <summary>Partition {{ loop.index }} — {{ partition.description }}{% if partition.file_listing %} ({{ partition.file_listing.file_count }} entries; {{ partition.file_listing.deleted_entry_count }} marked deleted){% endif %}</summary>
+          {% if partition.filesystem_info %}<pre>{{ partition.filesystem_info }}</pre>{% endif %}
+          {% if partition.filesystem_error %}<p><b>File-system analysis:</b> {{ partition.filesystem_error }}</p>{% endif %}
+          {% if partition.listing_error %}<p><b>File listing:</b> {{ partition.listing_error }}</p>{% endif %}
+          {% if partition.file_listing %}
+          <p>Full recursive listing SHA-256: <code>{{ partition.file_listing.listing_sha256 }}</code></p>
+          <a class="button secondary" href="{{ url_for('download_image_listing', case_id=case.id, image_id=image.id, partition_number=loop.index) }}">Download complete file listing</a>
+          <pre>{% for entry in partition.file_listing.sample %}{{ entry }}
+{% endfor %}</pre>
+          {% endif %}
+        </details>
+        {% endfor %}
+      </details>
+    </td></tr>
+    {% endif %}
+    {% if image.recovery %}
+    <tr><td colspan="8">
+      <b>Recovery complete:</b> {{ image.recovery.recovered_file_count }} files,
+      {{ image.recovery.recovered_size_bytes|filesizeformat }} extracted.
+      <a class="button secondary" href="{{ url_for('download_recovery_manifest', case_id=case.id, image_id=image.id) }}">Download hashed recovery manifest</a>
+      {% if image.recovered_files %}
+      <details><summary>First {{ image.recovered_files|length }} recovered files</summary><div class="table-wrap"><table><thead><tr><th>Path</th><th>Size</th><th>SHA-256</th><th></th></tr></thead><tbody>
+      {% for recovered in image.recovered_files %}
+      <tr><td>{{ recovered.path }}</td><td>{{ recovered.size_bytes|filesizeformat }}</td><td><code>{{ recovered.sha256 }}</code></td><td><a href="{{ url_for('download_recovered_file', case_id=case.id, image_id=image.id, filename=recovered.path) }}">Download</a></td></tr>
+      {% endfor %}
+      </tbody></table></div></details>
+      {% endif %}
+    </td></tr>
+    {% endif %}
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty-inline">No disk images uploaded.</p>{% endif %}
+  </section>
+
+  <section class="analysis-callout" id="analysis">
+    <div><p class="eyebrow">02 / ANALYSE</p><h2>Review the uploaded records</h2><p>Transparent rules and optional Isolation Forest scoring surface leads for analyst review. A finding is not proof of malicious activity.</p></div>
+    <form action="{{ url_for('analyze', case_id=case.id) }}" method="post" data-confirm="Run analysis on uploaded evidence? Existing findings for this case will be replaced.">{{ csrf_field() }}<button class="button" type="submit" {% if not evidence %}disabled{% endif %}>▶ Analyze evidence</button></form>
+  </section>
+
+  <section class="panel" id="timeline">
+    <div class="section-head"><div><p class="eyebrow">03 / FOLLOW THE EVENTS</p><h2>Incident timeline</h2><p class="panel-intro">Filter analyzed evidence and packet-capture events to follow what happened and when.</p></div><span class="count">{{ summary.event_count }} RECORDS</span></div>
+    {% if events or network_events %}
+    <div class="chart-grid"><div class="chart-card"><h3>Severity distribution</h3><canvas id="severityChart"></canvas></div><div class="chart-card"><h3>Event types</h3><canvas id="typeChart"></canvas></div></div>
+    <div class="timeline-toolbar">
+      <label>From<input type="date" id="filter-from"></label>
+      <label>To<input type="date" id="filter-to"></label>
+      <label>Severity<select id="filter-severity"><option value="">All severities</option><option>high</option><option>medium</option><option>low</option><option>info</option></select></label>
+      <label>Source IP<input id="filter-source" type="search" placeholder="Filter source"></label>
+      <label>Event type<select id="filter-type"><option value="">All event types</option></select></label>
+      <button class="button secondary" type="button" id="export-timeline">Export filtered CSV</button>
+    </div>
+    <p class="filter-count" id="timeline-count" aria-live="polite"></p><p class="filter-count" id="case-search-status" aria-live="polite"></p><p class="filter-count" id="feedback-status" aria-live="polite"></p>
+    <div class="table-wrap"><table class="timeline-table"><thead><tr><th>Record</th><th>Timestamp</th><th>Severity</th><th>Event / finding</th><th>Source → destination</th><th>Evidence</th><th>Review basis</th><th>Analyst review</th></tr></thead><tbody>
+    {% for event in events %}
+    <tr class="timeline-row" id="event-{{ event.record_key }}" data-event-index="{{ loop.index0 }}"><td><span class="record-id">EVT-{{ event.id }}</span></td><td>{{ event.timestamp or 'Unknown' }}</td><td><span class="severity {{ event.severity }}">{{ event.severity }}</span></td><td><b>{{ event.summary }}</b><small class="cell-sub">{{ event.event_type }}</small><small class="sequence-indicator"></small></td><td>{{ event.source_ip or '—' }}</td><td>{{ event.evidence_name or '—' }}</td><td><details class="event-explanation"><summary>Why flagged?</summary><div class="explanation-content"></div></details></td><td><details class="feedback-details"><summary>{% if event.feedback_decision %}{{ event.feedback_decision|replace('_',' ') }}{% else %}Review{% endif %}</summary><form class="feedback-form" data-record-type="event" data-record-id="{{ event.id }}"><select name="decision" required><option value="">Select outcome</option>{% for decision in ('true_positive','false_positive','true_negative','false_negative') %}<option value="{{ decision }}" {% if event.feedback_decision == decision %}selected{% endif %}>{{ decision|replace('_',' ')|title }}</option>{% endfor %}</select><input name="note" maxlength="500" placeholder="Optional analyst note" value="{{ event.feedback_note or '' }}"><button class="button secondary" type="submit">Save review</button></form></details></td></tr>
+    {% endfor %}
+    {% for event in network_events %}
+    {% set event_index = loop.index0 + events|length %}
+    <tr class="timeline-row" id="event-{{ event.record_key }}" data-event-index="{{ event_index }}"><td><span class="record-id">NET-{{ event.id }}</span></td><td>{{ event.timestamp or 'Unknown' }}</td><td><span class="severity {{ event.severity }}">{{ event.severity }}</span></td><td><b>{{ event.summary }}</b><small class="cell-sub">{{ event.event_type }}</small><small class="sequence-indicator"></small></td><td>{{ event.source_ip or '—' }}{% if event.destination_ip %}<small class="cell-sub">→ {{ event.destination_ip }}{% if event.destination_port %}:{{ event.destination_port }}{% endif %}</small>{% endif %}</td><td>{{ event.evidence_name or '—' }}</td><td><details class="event-explanation"><summary>Why flagged?</summary><div class="explanation-content"></div></details></td><td><details class="feedback-details"><summary>{% if event.feedback_decision %}{{ event.feedback_decision|replace('_',' ') }}{% else %}Review{% endif %}</summary><form class="feedback-form" data-record-type="network" data-record-id="{{ event.id }}"><select name="decision" required><option value="">Select outcome</option>{% for decision in ('true_positive','false_positive','true_negative','false_negative') %}<option value="{{ decision }}" {% if event.feedback_decision == decision %}selected{% endif %}>{{ decision|replace('_',' ')|title }}</option>{% endfor %}</select><input name="note" maxlength="500" placeholder="Optional analyst note" value="{{ event.feedback_note or '' }}"><button class="button secondary" type="submit">Save review</button></form></details></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty-inline">No findings yet. Upload evidence, then run analysis.</p>{% endif %}
+  </section>
+
+  <section class="panel" id="network">
+    <div class="section-head"><div><p class="eyebrow">04 / NETWORK REVIEW</p><h2>PCAP & network forensics</h2><p class="panel-intro">Upload PCAP/PCAPNG to summarize IP flows, DNS requests, ports, repeated SYNs, and volume outliers.</p></div></div>
+    <form action="{{ url_for('upload_pcap', case_id=case.id) }}" method="post" enctype="multipart/form-data" class="upload-form pcap-upload">{{ csrf_field() }}<label class="file-picker"><span class="upload-symbol">↑</span><span><b>Select packet capture</b><small>PCAP, PCAPNG, CAP · maximum 256 MB</small></span><input type="file" name="pcap" accept=".pcap,.pcapng,.cap" required></label><button class="button" type="submit">Analyze capture</button></form>
+    {% for capture in packet_captures %}{% set integrity = integrity_status.get('pcap:' ~ (capture.id|string), 'Hash recorded') %}
+    <details class="capture-card" id="pcap-{{ capture.id }}"><summary>{{ capture.original_name }} · {{ capture.packet_count }} packets · {{ capture.summary.unique_flows }} flows · SHA-256 <code>{{ capture.sha256[:18] }}…</code></summary>
+      <p class="hint">Size {{ capture.size_bytes|filesizeformat }} · Uploaded <time datetime="{{ capture.uploaded_at }}">{{ capture.uploaded_at[:19].replace("T", " ") }}</time> · Integrity <span class="integrity-state {{ 'failed' if integrity == 'Failed' else 'verified' if integrity == 'Verified' else 'recorded' }}">{{ integrity }}</span> · Analysis complete · Capture window {{ capture.summary.first_seen or 'unknown' }} to {{ capture.summary.last_seen or 'unknown' }} · {{ capture.summary.total_bytes|filesizeformat }} decoded packet bytes · <a href="{{ url_for('download_pcap', case_id=case.id, capture_id=capture.id) }}">Download original capture</a>{% if capture.summary.packet_limit_reached %} · Analysis stopped at the {{ capture.summary.packet_count }} packet safety limit{% endif %}{% if capture.summary.findings_truncated or capture.summary.untracked_flow_packets %} · Findings were capped for resource safety ({{ capture.summary.untracked_flow_packets }} packets belonged to untracked flows).{% endif %}</p>
+      <details class="transfer-details"><summary>Record packet-capture transfer</summary><form class="transfer-form" data-evidence-type="pcap" data-evidence-id="{{ capture.id }}"><label>Recipient<input name="to_actor" maxlength="120" required placeholder="Investigator name"></label><label>Transfer note<input name="details" maxlength="500" placeholder="Optional reason or method"></label><button class="button secondary" type="submit">Record transfer</button></form></details>
+      <div class="network-visual capture-network-visual" data-capture-id="{{ capture.id }}"><p class="empty-inline">Drawing communication graph…</p></div>
+      {% if capture.summary.dns %}<h3 class="subsection-title">DNS requests</h3><div class="table-wrap"><table><thead><tr><th>Source IP</th><th>Requested name</th><th>Query type</th><th>Count</th></tr></thead><tbody>{% for query in capture.summary.dns %}<tr><td>{{ query.source_ip }}</td><td>{{ query.domain }}</td><td>{{ query.query_type }}</td><td>{{ query.count }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+    </details>
+    {% else %}<p class="empty-inline">No packet captures have been analyzed in this case.</p>{% endfor %}
+  </section>
+
+  <section class="panel" id="assistant">
+    <div class="section-head"><div><p class="eyebrow">05 / INVESTIGATOR SUPPORT</p><h2>Evidence review assistant</h2><p class="panel-intro">Ask about this case’s saved findings. The assistant sends relevant case context to OpenAI and must cite case records.</p></div><span class="data-badge">{% if assistant_configured %}OPENAI READY{% else %}OPENAI KEY REQUIRED{% endif %}</span></div>
+    <div class="assistant-prompts"><button type="button" class="prompt-chip" data-question="Why was this event marked suspicious?">Why was this event marked suspicious?</button><button type="button" class="prompt-chip" data-question="Summarize the important findings">Summarize important findings</button><button type="button" class="prompt-chip" data-question="What should I review next?">What should I review next?</button></div>
+    <form id="assistant-form" class="assistant-form"><label class="sr-only" for="assistant-question">Ask a question about this case</label><input id="assistant-question" maxlength="1000" placeholder="Ask about a finding, alert, or next step…" autocomplete="off"><button class="button" type="submit">Review records <span aria-hidden="true">→</span></button></form>
+    <div id="assistant-answer" class="assistant-answer" aria-live="polite"><span class="assistant-mark">i</span><p>Select a suggested question or ask about a finding. The response will cite records from this case and state when the available data is insufficient.</p></div>
+    <p class="hint">When configured, relevant case details and your question are sent to OpenAI. Do not include data you are not authorized to share. Responses are leads, not proof; verify every citation against original evidence.</p>
+  </section>
+
+  <section class="panel" id="intelligence">
+    <div class="section-head"><div><p class="eyebrow">06 / INDICATOR CONTEXT</p><h2>Threat intelligence lookup</h2><p class="panel-intro">Check captured IPs and evidence hashes with VirusTotal. Results are cached for 24 hours.</p></div><span class="data-badge">{% if threat_intel_configured %}VIRUSTOTAL READY{% else %}API KEY REQUIRED{% endif %}</span></div>
+    <div id="indicator-list" class="indicator-list"><p class="empty-inline">Indicators from uploaded evidence will be listed here.</p></div>
+    <p class="hint">The selected IP or hash is sent to VirusTotal when you request a lookup. Unknown, clean, and flagged results are context—not proof. Cached results display their retrieval time.</p>
+  </section>
+
+  <section class="panel" id="evaluation">
+    <div class="section-head"><div><p class="eyebrow">07 / EXPLAINABILITY & QUALITY</p><h2>Detection review</h2><p class="panel-intro">Inspect each recorded rule reason and any model flag before drawing a conclusion.</p></div></div>
+    <div class="model-review-grid">
+      <div class="review-stat"><small>Rule-flagged findings</small><strong id="rule-flagged-count">{{ evaluation.rule_flagged }}</strong><span>current analysis records</span></div>
+      <div class="review-stat"><small>Model-flagged findings</small><strong id="model-flag-count">{{ evaluation.model_flagged }}</strong><span>current analysis records</span></div>
+      <div class="review-stat"><small>Precision</small><strong id="precision-value">{% if evaluation.precision is not none %}{{ "%.1f"|format(evaluation.precision * 100) }}%{% else %}Not measured{% endif %}</strong><span>{{ evaluation.true_positive }} TP / {{ evaluation.false_positive }} FP</span></div>
+      <div class="review-stat"><small>Recall</small><strong id="recall-value">{% if evaluation.recall is not none %}{{ "%.1f"|format(evaluation.recall * 100) }}%{% else %}Not measured{% endif %}</strong><span>{{ evaluation.true_positive }} TP / {{ evaluation.false_negative }} FN</span></div>
+      <div class="review-stat"><small>False-positive rate</small><strong id="false-positive-rate-value">{% if evaluation.false_positive_rate is not none %}{{ "%.1f"|format(evaluation.false_positive_rate * 100) }}%{% else %}Not measured{% endif %}</strong><span>{{ evaluation.false_positive }} FP / {{ evaluation.true_negative }} TN</span></div>
+      <div class="review-stat"><small>Labeled outcomes</small><strong id="labeled-count-value">{{ evaluation.labeled_count }}</strong><span>case findings reviewed</span></div>
+    </div>
+    <p class="data-limit compact-limit">Select true/false positive or true/false negative in the timeline to label a finding. Metrics are only meaningful with representative ground-truth labels. Per-event model score and feature contribution are shown in the finding explanation when available.</p>
+  </section>
+
+  <section class="panel" id="case-audit">
+    <div class="section-head"><div><p class="eyebrow">08 / ACCOUNTABILITY</p><h2>Evidence chain of custody</h2><p class="panel-intro">Recorded actions and integrity checks are shown as provided by the case audit log.</p></div></div>
+    {% if evidence or disk_images or packet_captures %}
+    <div class="table-wrap custody-register"><table><thead><tr><th>Evidence ID</th><th>Item</th><th>SHA-256</th><th>Collected / uploaded</th><th>Integrity</th></tr></thead><tbody>
+      {% for item in evidence %}<tr><td><span class="record-id">EV-{{ item.id }}</span></td><td>{{ item.original_name }}</td><td><code>{{ item.sha256 }}</code></td><td>{{ item.uploaded_at[:19] }}</td><td><span class="custody-status">Hash recorded</span></td></tr>{% endfor %}
+      {% for image in disk_images %}<tr><td><span class="record-id">IMG-{{ image.id[:8] }}</span></td><td>{{ image.original_name }}</td><td><code>{{ image.container_sha256 }}</code></td><td>{{ image.created_at[:19] }}</td><td><span class="custody-status">Container hash recorded</span></td></tr>{% endfor %}
+      {% for capture in packet_captures %}{% set integrity = integrity_status.get('pcap:' ~ (capture.id|string), 'Hash recorded') %}<tr><td><span class="record-id">PCAP-{{ capture.id }}</span></td><td>{{ capture.original_name }}</td><td><code>{{ capture.sha256 }}</code></td><td>{{ capture.uploaded_at[:19] }}</td><td><span class="custody-status">{{ integrity }}</span></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty-inline">No evidence is registered yet.</p>{% endif %}
+    <p class="filter-count" id="transfer-status" aria-live="polite"></p><div class="custody-actor-note"><b>Actor attribution:</b> actions are recorded under the signed-in account <b>{{ investigator }}</b>.</div>
+    {% if custody %}<div class="table-wrap custody-history"><table><thead><tr><th>Date / time (UTC)</th><th>Action</th><th>Evidence</th><th>Actor</th><th>SHA-256 before</th><th>SHA-256 after</th><th>Details / transfer</th></tr></thead><tbody>{% for item in custody %}<tr><td>{{ item.occurred_at }}</td><td>{{ item.action }}</td><td>{{ item.evidence_name }}</td><td>{{ item.actor }}</td><td><code>{{ item.sha256_before or '—' }}</code></td><td><code>{{ item.sha256_after or '—' }}</code></td><td>{{ item.details }}{% if item.from_actor or item.to_actor %}<small class="cell-sub">{{ item.from_actor or '—' }} → {{ item.to_actor or '—' }}</small>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty-inline">No custody actions recorded yet.</p>{% endif %}
+    {% if audit %}<details class="legacy-audit"><summary>Application activity log</summary><div class="audit-list">{% for item in audit %}<div class="audit-row"><span class="audit-dot"></span><div><b>{{ item.action }}</b><p>{{ item.details }}</p><small>{{ item.timestamp }} · {{ item.actor }}</small></div></div>{% endfor %}</div></details>
+    {% else %}<p class="empty-inline">No activity recorded.</p>{% endif %}
+  </section>
+
+  <section class="panel report-panel" id="report">
+    <div class="section-head report-head"><div><p class="eyebrow">09 / DOCUMENT THE WORK</p><h2>Investigation reports</h2><p class="panel-intro">Generate a current export from this case’s saved evidence, findings, evaluation labels, and custody events.</p></div><label class="audit-search-label">Search exports<input type="search" placeholder="PDF or CSV…" data-table-search=".report-export-row" aria-describedby="report-search-status"></label></div>
+    <p class="filter-count" id="report-search-status" aria-live="polite"></p>
+    <div class="table-wrap"><table><thead><tr><th>Export</th><th>Scope</th><th>Includes</th><th>Action</th></tr></thead><tbody>
+      <tr class="report-export-row"><td>PDF investigation report</td><td>Current case · {{ case.title }}</td><td>Evidence hashes, findings, network summary, review metrics, custody history</td><td><a class="button" href="{{ url_for('report', case_id=case.id) }}">Download PDF <span aria-hidden="true">↓</span></a></td></tr>
+      <tr class="report-export-row"><td>CSV investigation data</td><td>Current case · {{ case.title }}</td><td>Evidence, timeline records, analyst labels, and custody events</td><td><a class="button secondary" href="{{ url_for('report_csv', case_id=case.id) }}">Download CSV</a></td></tr>
+    </tbody></table></div>
+  </section>
+  <footer class="page-footer"><span>AI-DFIR <span class="footer-sep">/</span> Case {{ case.id }}</span><span>AI-assisted findings are indicators for human review, not proof.</span></footer>
+</main>
+</div>
+<script id="case-data" type="application/json">{{ {"caseId": case.id, "events": events, "networkEvents": network_events, "evidence": evidence, "diskImages": image_refs, "packetCaptures": packet_captures, "notes": notes}|tojson }}</script>
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827"><meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Accounts | AI-DFIR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+  <div class="topbar-right"><span class="top-status">ADMINISTRATION</span><a class="user-profile-link" href="{{ url_for('profile') }}" aria-label="View or edit profile for {{ current_user.username }}"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</span><span class="user-profile-name">{{ current_user.username }}</span><span class="profile-link-hint">Profile</span></a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Light mode</span></button><a class="back-link" href="{{ url_for('index') }}">Workspace</a></div>
+</header>
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+  {% endwith %}
+  <section class="hero"><div><p class="eyebrow">ADMINISTRATOR / ACCESS CONTROL</p><h1>Account management.</h1><p class="muted">Disable accounts and reset authenticator enrollment. Account changes do not delete investigations or evidence.</p></div><a class="button secondary" href="{{ url_for('security_settings') }}">My security settings</a></section>
+  <section class="panel"><div class="section-head"><div><p class="eyebrow">IDENTITIES</p><h2>Registered accounts</h2></div><span class="count">{{ users|length }} ACCOUNTS</span></div>
+    <div class="table-wrap"><table class="admin-users"><thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>MFA</th><th>Actions</th></tr></thead><tbody>
+    {% for user in users %}<tr><td><b>{{ user.username }}</b></td><td>{{ user.email or 'Not provided' }}</td><td>{{ user.role|title }}</td><td>{{ 'Disabled' if user.disabled else 'Active' }}</td><td>{{ 'Enabled' if user.totp_enabled else 'Off' }}</td><td><div class="admin-actions">
+      {% if user.id != current_user.id %}<form method="post">{{ csrf_field() }}<input type="hidden" name="user_id" value="{{ user.id }}"><input type="hidden" name="action" value="toggle_disabled"><button class="button secondary" type="submit">{{ 'Enable' if user.disabled else 'Disable' }}</button></form>{% endif %}
+      {% if user.totp_enabled %}<form method="post" data-confirm="Reset this user’s MFA enrollment?">{{ csrf_field() }}<input type="hidden" name="user_id" value="{{ user.id }}"><input type="hidden" name="action" value="reset_mfa"><button class="button secondary" type="submit">Reset MFA</button></form>{% endif %}
+    </div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</main>
+</body>
+</html>

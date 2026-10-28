@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{{ {"login": "Sign in", "register": "Create account", "mfa": "Verify sign in", "forgot": "Password recovery", "reset": "Reset password"}[mode] }} | AI-DFIR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body class="auth-page">
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('login') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+    <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Light mode</span></button>
+  </header>
+  <main class="auth-shell">
+    <section class="auth-card">
+      <p class="eyebrow">{{ "INVESTIGATOR ACCESS" if mode in ("login", "mfa") else "ACCOUNT SECURITY" }}</p>
+      <h1>{% if mode == "login" %}Welcome back.{% elif mode == "register" %}Create your account.{% elif mode == "mfa" %}Verify your identity.{% elif mode == "forgot" %}Reset your password.{% else %}Choose a new password.{% endif %}</h1>
+      <p class="auth-intro">{% if mode == "login" %}Sign in to review your investigations and evidence.{% elif mode == "register" %}Register for a private user workspace. Administrator access is provisioned by the system owner.{% elif mode == "mfa" %}Enter your authenticator code or one unused recovery code.{% elif mode == "forgot" %}If email recovery is configured, we will send a private reset link.{% else %}Choose a new password. Resetting your password also clears MFA enrollment for security.{% endif %}</p>
+      {% if mode == "login" %}<p class="auth-provision-note">Administrator accounts are provisioned by the system owner; there is no shared default admin password.</p>{% endif %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <form method="post" action="{% if mode == 'reset' %}{{ url_for('password_reset', token=reset_token) }}{% elif mode == 'forgot' %}{{ url_for('password_forgot') }}{% elif mode == 'mfa' %}{{ url_for('login') }}{% else %}{{ url_for(mode) }}{% endif %}" class="auth-form">
+        {{ csrf_field() }}
+        {% if mode == "login" %}<input type="hidden" name="next" value="{{ request.args.get('next', '') }}">{% endif %}
+        {% if mode in ("login", "register") %}
+          <label>Username<input name="username" minlength="3" maxlength="32" autocomplete="username" required placeholder="Your username" value="{{ request.form.get('username', '') }}"></label>
+        {% endif %}
+        {% if mode == "login" %}
+          <label>Sign in as<select name="role" required><option value="user" {% if request.form.get('role', 'user') == 'user' %}selected{% endif %}>User</option><option value="admin" {% if request.form.get('role') == 'admin' %}selected{% endif %}>Administrator</option></select></label>
+          <label>Password<input type="password" name="password" maxlength="128" autocomplete="current-password" required placeholder="Your password"></label>
+        {% elif mode == "register" %}
+          <label>Email for password recovery<input type="email" name="email" maxlength="254" autocomplete="email" required placeholder="you@example.com" value="{{ request.form.get('email', '') }}"></label>
+          <label>Password<input type="password" name="password" minlength="12" maxlength="128" autocomplete="new-password" required placeholder="At least 12 characters"></label>
+        {% elif mode == "mfa" %}
+          <label>Authenticator or recovery code<input name="mfa_code" autocomplete="one-time-code" required autofocus placeholder="6-digit code or recovery code"></label>
+        {% elif mode == "forgot" %}
+          <label>Account email<input type="email" name="email" maxlength="254" autocomplete="email" required placeholder="you@example.com"></label>
+        {% else %}
+          <label>New password<input type="password" name="password" minlength="12" maxlength="128" autocomplete="new-password" required placeholder="At least 12 characters"></label>
+        {% endif %}
+        <button class="button auth-submit" type="submit">{% if mode == 'login' %}Sign in{% elif mode == 'register' %}Create user account{% elif mode == 'mfa' %}Verify and sign in{% elif mode == 'forgot' %}Send recovery link{% else %}Reset password{% endif %} <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="auth-switch">
+        {% if mode == "login" %}New to the workspace? <a href="{{ url_for('register') }}">Create a user account</a>
+        {% elif mode == "register" %}Already registered? <a href="{{ url_for('login') }}">Sign in</a>
+        {% elif mode in ("forgot", "reset", "mfa") %}<a href="{{ url_for('login') }}">Return to sign in</a>{% endif %}
+      </p>
+      {% if mode == "login" %}<p class="auth-switch"><a href="{{ url_for('password_forgot') }}">Forgot your password?</a></p>{% endif %}
+    </section>
+    <p class="auth-footnote">AI-DFIR is an educational forensic triage workspace. Keep original evidence read-only and validate findings independently.</p>
+  </main>
+</body>
+</html>

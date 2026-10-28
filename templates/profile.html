@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>My profile | AI-DFIR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+  <div class="topbar-right"><a class="user-profile-link active" href="{{ url_for('profile') }}" aria-label="Your profile settings"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</span><span class="user-profile-name">{{ current_user.username }}</span><span class="profile-link-hint">Settings</span></a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Light mode</span></button><a class="back-link" href="{{ url_for('index') }}">Workspace</a></div>
+</header>
+<main class="container profile-page">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+  {% endwith %}
+  <section class="hero">
+    <div><p class="eyebrow">ACCOUNT / {{ user.role|upper }}</p><h1>Your profile.</h1><p class="muted">Manage the account details and password connected to your AI-DFIR workspace.</p></div>
+    <a class="button secondary" href="{{ url_for('security_settings') }}">Security &amp; MFA settings</a>
+  </section>
+  <nav class="profile-settings-nav panel" aria-label="Profile settings">
+    <span class="profile-settings-label">PROFILE SETTINGS</span>
+    <a href="#account-settings">Account details</a>
+    <a href="#password-settings">Change password</a>
+    <a href="{{ url_for('security_settings') }}">Security &amp; MFA</a>
+  </nav>
+  <section class="profile-summary panel" aria-label="Account overview">
+    <span class="profile-avatar profile-avatar-large" aria-hidden="true">{{ user.username[0]|upper }}</span>
+    <div><p class="eyebrow">SIGNED-IN ACCOUNT</p><h2>{{ user.username }}</h2><p class="muted">{{ user.role|title }} account · Member since {{ user.created_at[:10] }}</p></div>
+    <span class="case-status">{{ "MFA enabled" if user.totp_enabled else "MFA not enabled" }}</span>
+  </section>
+  <div class="profile-grid">
+    <section class="panel profile-card" id="account-settings">
+      <div class="section-head"><div><p class="eyebrow">PROFILE DETAILS</p><h2>Account information</h2><p class="panel-intro">Your username and recovery email are saved to your account.</p></div></div>
+      <form method="post" class="auth-form">
+        {{ csrf_field() }}<input type="hidden" name="action" value="update_profile">
+        <label>Username<input name="username" minlength="3" maxlength="32" pattern="[a-zA-Z0-9_\x2D]{3,32}" autocomplete="username" required value="{{ user.username }}"></label>
+        <label>Recovery email<input type="email" name="email" maxlength="254" autocomplete="email" required value="{{ user.email }}" placeholder="you@example.com"></label>
+        <label>Current password <span class="field-hint">Required to save account changes</span><input type="password" name="current_password" maxlength="128" autocomplete="current-password" required></label>
+        <button class="button auth-submit" type="submit">Save profile</button>
+      </form>
+    </section>
+    <section class="panel profile-card" id="password-settings">
+      <div class="section-head"><div><p class="eyebrow">PASSWORD</p><h2>Change password</h2><p class="panel-intro">Use at least 12 characters. Other active sessions will be signed out.</p></div></div>
+      <form method="post" class="auth-form">
+        {{ csrf_field() }}<input type="hidden" name="action" value="change_password">
+        <label>Current password<input type="password" name="current_password" maxlength="128" autocomplete="current-password" required></label>
+        <label>New password<input type="password" name="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+        <label>Confirm new password<input type="password" name="password_confirm" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+        <button class="button auth-submit" type="submit">Change password</button>
+      </form>
+    </section>
+  </div>
+  <p class="auth-footnote">Account role: <b>{{ user.role|title }}</b>. Role and administrator access can only be changed by an authorized administrator.</p>
+</main>
+</body>
+</html>

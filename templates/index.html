@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>AI-DFIR | Investigation workspace</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body class="index-page">
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+  <div class="topbar-right"><label class="top-search-wrap"><span class="sr-only">Search investigations</span><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4 4"/></svg><input class="top-search" type="search" placeholder="Search cases…" autocomplete="off" data-table-search="#case-table tbody [data-search-row]" data-empty-row="#case-table .search-empty-row" aria-describedby="workspace-search-status"></label><span class="top-status"><span class="dot"></span> {{ current_user.role|upper }} WORKSPACE</span><a class="user-profile-link" href="{{ url_for('profile') }}" aria-label="View or edit profile for {{ current_user.username }}"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</span><span class="user-profile-name">{{ current_user.username }}</span><span class="profile-link-hint">Profile</span></a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Light mode</span></button><form action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button secondary logout-button" type="submit">Sign out</button></form></div>
+</header>
+<div class="app-layout">
+  {% include "_workspace_sidebar.html" %}
+  <main class="container" id="overview">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% endwith %}
+    <section class="hero">
+      {% set open_cases = namespace(value=0) %}{% for case in cases %}{% if case.status != 'Closed' %}{% set open_cases.value = open_cases.value + 1 %}{% endif %}{% endfor %}
+      <div><p class="eyebrow">FORENSICS WORKSPACE <span class="eyebrow-rule"></span> {{ current_user.role|upper }} VIEW</p>
+        <h1>Investigation overview</h1>
+        <p class="muted">{% if current_user.role == 'admin' %}Review cases and activity across investigator accounts.{% else %}Your cases, evidence, and review work in one place.{% endif %}</p>
+      </div>
+      <a class="button" href="#new-case">＋ Start an investigation</a>
+    </section>
+
+    <section class="workspace-metrics" aria-label="Investigation summary">
+      <div class="metric-card"><span class="metric-icon teal" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14"/></svg></span><div><small>Open cases</small><strong>{{ open_cases.value }}</strong></div></div>
+      <div class="metric-card"><span class="metric-icon muted-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M4 2.8h8l4 4v10.4H4zM12 2.8v4h4M7 11h6M7 14h6"/></svg></span><div><small>Evidence files</small><strong>{% set evidence_total = namespace(value=0) %}{% for case in cases %}{% set evidence_total.value = evidence_total.value + case.evidence_count %}{% endfor %}{{ evidence_total.value }}</strong></div></div>
+      <div class="metric-card"><span class="metric-icon critical-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m10 2.5 7.2 13H2.8zM10 7v4M10 14h.01"/></svg></span><div><small>High-severity findings</small><strong>{{ review_summary.high_findings }}</strong></div></div>
+      <div class="metric-card"><span class="metric-icon warning-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.2"/><path d="M10 6v4l2.8 1.8"/></svg></span><div><small>Pending reviews</small><strong>{{ review_summary.pending_reviews }}</strong></div></div>
+    </section>
+    <p class="workspace-storage">Evidence storage used: <b>{{ storage_used|filesizeformat }}</b> of {{ storage_limit|filesizeformat }}</p>
+
+    <section class="panel create-panel" id="new-case">
+      <div class="section-head"><div><p class="eyebrow">A CLEAR PLACE TO BEGIN</p><h2>Create a case</h2><p class="panel-intro">Give this investigation a name and a short description of its scope.</p></div><span class="step-number">01</span></div>
+      <form action="{{ url_for('new_case') }}" method="post" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Case title<input name="title" maxlength="120" required placeholder="e.g. Suspicious sign-in review"></label>
+        <label>Case description<textarea name="description" maxlength="1000" rows="2" placeholder="Purpose, scope, or initial context"></textarea></label>
+        <div><button class="button" type="submit">Create case <span aria-hidden="true">→</span></button></div>
+      </form>
+    </section>
+
+    <section class="section-head list-heading" id="cases">
+      <div><p class="eyebrow">{{ "ALL INVESTIGATIONS" if current_user.role == "admin" else "YOUR CASES" }}</p><h2>Investigation register</h2></div>
+      <span class="count">{{ cases|length }} RECORD{% if cases|length != 1 %}S{% endif %}</span>
+    </section>
+    {% if cases %}
+      <p class="search-status" id="workspace-search-status" aria-live="polite"></p>
+      <div class="table-wrap case-table-wrap"><table class="case-register" id="case-table"><thead><tr><th>Case ID</th><th>Case name</th><th>Status</th><th>Priority</th><th>Assigned investigator</th><th>Evidence</th><th>Last updated (UTC)</th></tr></thead><tbody>
+      {% for case in cases %}<tr data-search-row>
+        <td><span class="record-id">CASE-{{ "%04d"|format(case.id) }}</span></td>
+        <td><a class="case-table-link" href="{{ url_for('case_detail', case_id=case.id) }}">{{ case.title }}<small class="cell-sub">{{ case.description or "Open case details" }}</small></a></td>
+        <td><span class="case-status">{{ case.status }}</span></td>
+        <td><span class="case-priority priority-{{ case.priority|lower }}">{{ case.priority }}</span></td>
+        <td>{{ case.assignee or case.owner_username or "Unassigned" }}</td>
+        <td>{{ case.evidence_count }}</td>
+        <td><time datetime="{{ case.last_updated_at }}">{{ case.last_updated_at[:19].replace("T", " ") }}</time></td>
+      </tr>{% endfor %}
+      <tr class="search-empty-row" hidden><td colspan="7">No cases match this search.</td></tr>
+      </tbody></table></div>
+    {% else %}
+      <a class="empty" href="#new-case" aria-label="Create your first investigation">
+        <span class="empty-icon" aria-hidden="true">＋</span>
+        <h3>No investigations yet</h3>
+        <p>Create your first case to register evidence and begin a documented review.</p>
+        <span class="empty-action">Create a case <span aria-hidden="true">→</span></span>
+      </a>
+    {% endif %}
+    <footer class="page-footer"><span>AI-DFIR <span class="footer-sep">/</span> Educational prototype</span><span>Findings are leads for human review, not proof.</span></footer>
+  </main>
+</div>
+</body>
+</html>

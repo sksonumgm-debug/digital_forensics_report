@@ -1,0 +1,18 @@
+timestamp,source_ip,destination_ip,event_type,username,status,bytes,port,message
+2026-10-13 08:12:10,192.0.2.10,192.0.2.20,login,student1,success,1200,443,Normal successful login
+2026-10-13 08:13:02,198.51.100.25,192.0.2.20,login,admin,failed,500,22,Failed login attempt
+2026-10-13 08:13:12,198.51.100.25,192.0.2.20,login,admin,failed,500,22,Failed login attempt
+2026-10-13 08:13:22,198.51.100.25,192.0.2.20,login,admin,failed,500,22,Failed login attempt
+2026-10-13 08:13:32,198.51.100.25,192.0.2.20,login,admin,failed,500,22,Failed login attempt
+2026-10-13 08:13:42,198.51.100.25,192.0.2.20,login,admin,failed,500,22,Failed login attempt
+2026-10-13 08:15:00,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,21,Connection to test service
+2026-10-13 08:15:03,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,22,Connection to test service
+2026-10-13 08:15:06,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,23,Connection to test service
+2026-10-13 08:15:09,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,25,Connection to test service
+2026-10-13 08:15:12,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,53,Connection to test service
+2026-10-13 08:15:15,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,80,Connection to test service
+2026-10-13 08:15:18,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,110,Connection to test service
+2026-10-13 08:15:21,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,135,Connection to test service
+2026-10-13 08:15:24,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,139,Connection to test service
+2026-10-13 08:15:27,203.0.113.9,192.0.2.30,network_connection,unknown,unknown,450,445,Connection to test service
+2026-10-13 08:20:00,192.0.2.10,192.0.2.40,file_transfer,student1,success,18000000,443,Large simulated transfer for demo

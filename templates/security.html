@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Account security | AI-DFIR</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">A</span><span>AI-DFIR <small>INVESTIGATION WORKSPACE</small></span></a>
+  <div class="topbar-right"><a class="user-profile-link" href="{{ url_for('profile') }}" aria-label="View or edit profile for {{ current_user.username }}"><span class="profile-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</span><span class="user-profile-name">{{ current_user.username }}</span><span class="profile-link-hint">Profile</span></a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch to light theme">☼ <span>Light mode</span></button><a class="back-link" href="{{ url_for('index') }}">Workspace</a></div>
+</header>
+<main class="auth-shell">
+  <section class="auth-card">
+    <p class="eyebrow">ACCOUNT SECURITY</p>
+    <h1>Protect your account.</h1>
+    <p class="auth-intro">Signed in as <b>{{ user.username }}</b>. Authenticator-based MFA is optional; recovery codes are single-use.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}<div class="flash-list">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% endwith %}
+    {% if recovery_codes %}
+      <div class="flash success"><b>Save these recovery codes now.</b><br>Each code works once. They cannot be displayed again.</div>
+      <pre class="recovery-codes">{% for code in recovery_codes %}{{ code }}
+{% endfor %}</pre>
+      <a class="button secondary" href="{{ url_for('security_settings') }}">I saved my codes</a>
+    {% elif pending_secret %}
+      <p>1. Add a new account to your authenticator app using this setup key or provisioning URI.</p>
+      <label>Setup key<input readonly value="{{ pending_secret }}" aria-label="Authenticator setup key"></label>
+      <label>Provisioning URI<textarea readonly rows="3" aria-label="Authenticator provisioning URI">{{ provisioning_uri }}</textarea></label>
+      <p class="auth-provision-note">Keep this setup page private. The secret expires when your session ends or you sign out.</p>
+      <form method="post" class="auth-form">
+        {{ csrf_field() }}<input type="hidden" name="action" value="enable_mfa">
+        <label>Authenticator verification code<input name="mfa_code" autocomplete="one-time-code" inputmode="numeric" required placeholder="6-digit code"></label>
+        <button class="button auth-submit" type="submit">Enable MFA</button>
+      </form>
+    {% elif user.totp_enabled %}
+      <div class="flash success">Authenticator MFA is enabled.</div>
+      <form method="post" class="auth-form">
+        {{ csrf_field() }}<input type="hidden" name="action" value="disable_mfa">
+        <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+        <label>Authenticator or recovery code<input name="mfa_code" autocomplete="one-time-code" required></label>
+        <button class="button secondary" type="submit">Disable MFA</button>
+      </form>
+    {% else %}
+      <p>Add a time-based one-time password authenticator. Save the recovery codes generated during enrollment in a secure place.</p>
+      <form method="post">{{ csrf_field() }}<input type="hidden" name="action" value="begin_mfa"><button class="button" type="submit">Set up authenticator MFA</button></form>
+    {% endif %}
+  </section>
+  <p class="auth-footnote">Changing AI_DFIR_SECRET invalidates encrypted MFA enrollment; administrators can reset MFA so an account can enroll again.</p>
+</main>
+</body>
+</html>

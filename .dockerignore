@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+ai_dfir.sqlite3*
+uploads/
+reports/
+data/
+.env
+.git/
+.pytest_cache/
